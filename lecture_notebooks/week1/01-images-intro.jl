@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.11.12
+# v0.12.18
 
 using Markdown
 using InteractiveUtils
@@ -245,7 +245,7 @@ md"
 "
 
 # ╔═╡ 4eea5710-e8d5-11ea-3978-af66ee2a137e
-size(philip)
+size(philip)  # Pixel indices walk down a column then move over (right) a row, just like matlab
 
 # ╔═╡ 57b3a0c2-e8d5-11ea-15aa-8da4549f849b
 md"- Which number is which?"
@@ -400,6 +400,9 @@ md"##"
 
 # ╔═╡ 3c32efde-e938-11ea-1ae4-5d88290f5311
 redify.(philip)
+
+# ╔═╡ ae39002e-4ad0-11eb-0c10-1377c75814b1
+Gray.(philip)
 
 # ╔═╡ 4b26e4e6-e938-11ea-2635-6d4fc15e13b7
 md"## Transforming an image
@@ -787,6 +790,7 @@ grant = decimate(process_raw_camera_data(raw_camera_data), 2)
 # ╠═2744a556-e94f-11ea-2434-d53c24e59285
 # ╟─98412a36-e93b-11ea-1954-f1c105c6ed4a
 # ╠═3c32efde-e938-11ea-1ae4-5d88290f5311
+# ╠═ae39002e-4ad0-11eb-0c10-1377c75814b1
 # ╟─4b26e4e6-e938-11ea-2635-6d4fc15e13b7
 # ╠═41fa85c0-e939-11ea-1ad8-79805a2083bb
 # ╟─c12e0928-e93b-11ea-0922-2b590a99ee89
