@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.11.12
+# v0.12.18
 
 using Markdown
 using InteractiveUtils
@@ -230,6 +230,9 @@ md"There's something else we would like to be able to do with matrices: **reshap
 # ╔═╡ 24cefdea-f1e9-11ea-3c37-c3626e555e4e
 M2 = reshape(M, 3, 8)
 
+# ╔═╡ 366046e0-4bbe-11eb-06fa-a31f124f5fb3
+md"""Reshape/Transpose cannot be read with a simple pointer increment. Typically a copy"""
+
 # ╔═╡ cae01608-f1e9-11ea-0878-a7b281aa6113
 md"(Note the order in which the elements were taken.)"
 
@@ -241,6 +244,9 @@ md"Similarly, we might want to turn the matrix into a vector. For this we can us
 
 # ╔═╡ ecb7395a-f1e9-11ea-2346-abbd7f1bd73e
 vv = vec(M)
+
+# ╔═╡ 41b889ee-4bbe-11eb-31c9-7f8dd7fb091f
+md"""Should be possible to use a view, same memory layout"""
 
 # ╔═╡ f0eb9eaa-f1e9-11ea-1bd5-3f47ff24cbf6
 md"Again you should check if this is a copy or a view. The order of the elements here is showing us the **storage order** of a matrix, i.e. in which order in the (linear) memory inside the computer the elements of the 2D matrix are being stored."
@@ -325,10 +331,12 @@ For other operations like `reshape` and `vec` it's also critical to know if they
 # ╟─94c85c38-f1e9-11ea-3ab8-976569b36e23
 # ╟─eb96a16a-f1e8-11ea-0398-1715aac5fb2d
 # ╠═24cefdea-f1e9-11ea-3c37-c3626e555e4e
+# ╠═366046e0-4bbe-11eb-06fa-a31f124f5fb3
 # ╟─cae01608-f1e9-11ea-0878-a7b281aa6113
 # ╟─2b3cbb88-f1e9-11ea-16f1-436de44841de
 # ╟─c36d3770-f1e9-11ea-2fa5-5ddb60c2adce
 # ╠═ecb7395a-f1e9-11ea-2346-abbd7f1bd73e
+# ╠═41b889ee-4bbe-11eb-31c9-7f8dd7fb091f
 # ╟─f0eb9eaa-f1e9-11ea-1bd5-3f47ff24cbf6
 # ╟─648b17b6-f1e6-11ea-3351-23b46a2e265d
 # ╟─689e4c60-f1e6-11ea-3782-43decd275b5f

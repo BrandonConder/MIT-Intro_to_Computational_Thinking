@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.11.10
+# v0.12.18
 
 using Markdown
 using InteractiveUtils
@@ -18,7 +18,6 @@ using Pkg
 
 # ╔═╡ 21e744b8-f0d1-11ea-2e09-7ffbcdf43c37
 begin
-	Pkg.activate(mktempdir())
 	
 	Pkg.add("Gadfly")
 	Pkg.add("Compose")
@@ -41,7 +40,7 @@ begin
 end
 
 # ╔═╡ 1ab1c808-f0d1-11ea-03a7-e9854427d45f
-
+Pkg.add("Gadfly")
 
 # ╔═╡ 10f850fc-f0d1-11ea-2a58-2326a9ea1e2a
 set_default_plot_size(12cm, 12cm)
@@ -237,7 +236,7 @@ end
 # ╔═╡ Cell order:
 # ╠═15a4ba3e-f0d1-11ea-2ef1-5ff1dee8795f
 # ╠═1ab1c808-f0d1-11ea-03a7-e9854427d45f
-# ╟─21e744b8-f0d1-11ea-2e09-7ffbcdf43c37
+# ╠═21e744b8-f0d1-11ea-2e09-7ffbcdf43c37
 # ╠═10f850fc-f0d1-11ea-2a58-2326a9ea1e2a
 # ╟─7b4d5270-f0d3-11ea-0b48-79005f20602c
 # ╠═6fd3b7a4-f0d3-11ea-1f26-fb9740cd16e0

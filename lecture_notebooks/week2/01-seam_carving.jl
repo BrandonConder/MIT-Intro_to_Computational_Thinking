@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.11.13
+# v0.12.18
 
 using Markdown
 using InteractiveUtils
@@ -16,7 +16,7 @@ end
 # ╔═╡ 877df834-f078-11ea-303b-e98273ef98a4
 begin
 	import Pkg
-	Pkg.activate(mktempdir())
+	#Pkg.activate(mktempdir())
 end
 
 # ╔═╡ 0316b94c-eef6-11ea-19bc-dbc959901bb5

@@ -1,6 +1,13 @@
 [deps]
+Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
+Compose = "a81c6b42-2e10-5240-aca2-a61377ecd94b"
 DSP = "717857b8-e6f2-59f4-9121-6e50c889abd2"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+Gadfly = "c91e804a-d5a3-530f-b6f0-dfbca275c004"
+Hyperscript = "47d2ed2b-36de-50cf-bf87-49c2cf4b8b91"
 ImageFiltering = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
+ImageMagick = "6218d12a-5da1-5696-b52f-db25d2ecc6d1"
+Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
 Pluto = "c3e4b0f8-55cb-11ea-2926-15256bba5781"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
