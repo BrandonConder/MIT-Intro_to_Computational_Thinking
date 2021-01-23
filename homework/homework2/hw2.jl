@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.11.12
+# v0.12.18
 
 using Markdown
 using InteractiveUtils
@@ -40,6 +40,15 @@ begin
 	using BenchmarkTools
 end
 
+# ╔═╡ a7e242fa-4c68-11eb-2620-214532ccfcd1
+Pkg.add("OffsetArrays"); using OffsetArrays
+
+# ╔═╡ 561d1258-4c6b-11eb-148a-03b33a210658
+using Base.Threads: @threads
+
+# ╔═╡ 776e8888-4ca2-11eb-0bd1-5bdd481f5e32
+using Distributed; nworkers()
+
 # ╔═╡ e6b6760a-f37f-11ea-3ae1-65443ef5a81a
 md"_homework 2, version 2.1_"
 
@@ -59,7 +68,7 @@ Feel free to ask questions!
 # ╔═╡ 33e43c7c-f381-11ea-3abc-c942327456b1
 # edit the code below to set your name and kerberos ID (i.e. email without @mit.edu)
 
-student = (name = "Jazzy Doe", kerberos_id = "jazz")
+student = (name = "Brandon", kerberos_id = "noreply")
 
 # you might need to wait until all other cells in this notebook have completed running. 
 # scroll around the page to see what's up
@@ -77,6 +86,9 @@ md"_Let's create a package environment:_"
 #img = load(download("https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Piet_Mondriaan%2C_1930_-_Mondrian_Composition_II_in_Red%2C_Blue%2C_and_Yellow.jpg/300px-Piet_Mondriaan%2C_1930_-_Mondrian_Composition_II_in_Red%2C_Blue%2C_and_Yellow.jpg"))
 #img = load(download("https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Hilma_af_Klint_-_Group_IX_SUW%2C_The_Swan_No._1_%2813947%29.jpg/477px-Hilma_af_Klint_-_Group_IX_SUW%2C_The_Swan_No._1_%2813947%29.jpg"))
 img = load(download("https://i.imgur.com/4SRnmkj.png"))
+
+# ╔═╡ 608876a8-4cc8-11eb-31e6-77230a7fcd69
+size(img)
 
 # ╔═╡ cc9fcdae-f314-11ea-1b9a-1f68b792f005
 md"""
@@ -120,7 +132,17 @@ end
 md"Let's use it to remove the pixels on the diagonal. These are the image dimensions before and after doing so:"
 
 # ╔═╡ 9cced1a8-f326-11ea-0759-0b2f22e5a1db
-(before=size(img), after=size(remove_in_each_row(img, 1:size(img, 1))))
+begin
+	rows, cols = size(img)
+	diag = collect(1:rows)
+	if rows > cols
+		invalid_indices = diag .> cols
+		diag[invalid_indices] .= cols
+		
+	end
+	
+	(before=size(img), after=size(remove_in_each_row(img, diag)))
+end
 
 # ╔═╡ 1d893998-f366-11ea-0828-512de0c44915
 md"""
@@ -136,8 +158,13 @@ md"""
 First, as an example, let's benchmark the `remove_in_each_row` function we defined above by passing in our image and a some indices to remove.
 """
 
+# ╔═╡ 41faeb8a-4d29-11eb-0e70-352730045cfc
+md"Run benchmarks: $(@bind run_benchmarks CheckBox())"
+
 # ╔═╡ e501ea28-f326-11ea-252a-53949fd9ef57
-performance_experiment_default = @benchmark remove_in_each_row(img, 1:size(img, 1))
+if run_benchmarks
+	performance_experiment_default = @benchmark remove_in_each_row(img, diag)
+end
 
 # ╔═╡ f7915918-f366-11ea-2c46-2f4671ae8a22
 md"""
@@ -159,13 +186,16 @@ function remove_in_each_row_no_vcat(img, column_numbers)
 	for (i, j) in enumerate(column_numbers)
 		# EDIT THE FOLLOWING LINE and split it into two lines
 		# to avoid using `vcat`.
-		img′[i, :] .= vcat(img[i, 1:j-1], img[i, j+1:end])
+		img′[i, 1:j-1] = img[i, 1:j-1]
+		img′[i, j:end] = img[i, j+1:end]
 	end
 	img′
 end
 
 # ╔═╡ 67717d02-f327-11ea-0988-bfe661f57f77
-performance_experiment_without_vcat = @benchmark remove_in_each_row_no_vcat(img, 1:size(img, 1))
+if run_benchmarks
+	performance_experiment_without_vcat = @benchmark remove_in_each_row_no_vcat(img, diag)
+end
 
 # ╔═╡ 9e149cd2-f367-11ea-28ef-b9533e8a77bb
 md"""
@@ -179,9 +209,17 @@ md"""
 👉 How many estimated allocations did this optimization reduce, and how can you explain most of them?
 """
 
+# ╔═╡ f5f74b46-4bca-11eb-0b9d-1359cecd952b
+performance_experiment_default.allocs - performance_experiment_without_vcat.allocs
+
+# ╔═╡ 108eea16-4bcb-11eb-108d-1b9cb99d3e5c
+size(img,1)
+
 # ╔═╡ e49235a4-f367-11ea-3913-f54a4a6b2d6b
 no_vcat_observation = md"""
-<Your answer here>
+The number of allocations was reduced by exactly the number of rows in the image. This is because each iteration of the loop needed to allocate a temporary array to store the vcat data.
+
+The solution without vcat avoided temporary allocations by copying the slice of the array into the desired destination memory location.
 """
 
 # ╔═╡ 837c43a4-f368-11ea-00a3-990a45cb0cbd
@@ -199,18 +237,21 @@ function remove_in_each_row_views(img, column_numbers)
 	@assert size(img, 1) == length(column_numbers) # same as the number of rows
 	m, n = size(img)
 	local img′ = similar(img, m, n-1) # create a similar image with one less column
-
-	for (i, j) in enumerate(column_numbers)
+	
+	@views for (i, j) in enumerate(column_numbers)
 		# EDIT THE FOLLOWING LINE and split it into two lines
 		# to avoid using `vcat`.
-		img′[i, :] .= vcat(img[i, 1:j-1], img[i, j+1:end])
+		img′[i, 1:j-1] = img[i, 1:j-1]
+		img′[i, j:end] = img[i, j+1:end]
 	end
 	img′
 end
 
 # ╔═╡ 3335e07c-f328-11ea-0e6c-8d38c8c0ad5b
-performance_experiment_views = @benchmark begin
-	remove_in_each_row_views(img, 1:size(img, 1))
+if run_benchmarks
+	performance_experiment_views = @benchmark begin
+	remove_in_each_row_views(img, diag)
+	end
 end
 
 # ╔═╡ 40d6f562-f329-11ea-2ee4-d7806a16ede3
@@ -236,9 +277,19 @@ Nice! If you did your optimizations right, you should be able to get down the es
 👉 How many allocations were avoided by adding the `@view` optimization over the `vcat` optimization? Why is this?
 """
 
+# ╔═╡ e3187452-4bcd-11eb-1912-132d8ca4c299
+performance_experiment_without_vcat.allocs - performance_experiment_views.allocs
+
+# ╔═╡ 055a0684-4bce-11eb-3faa-d1488817444a
+size(img,1)*2
+
 # ╔═╡ fd819dac-f368-11ea-33bb-17148387546a
 views_observation = md"""
-<your answer here>
+The number of allocations was reduced by exactly twice the number of rows in the image. This is because each iteration of the loop needed to perform two allocations to copy each slice of the image.
+
+As far as I know, if the view will be accessed many times, it may be more efficient to copy the data.
+
+Also note: last time I checked Python's numpy module can't do the @views-style view/slicing due to the underlying Intel math kernel library. Neat!
 """
 
 # ╔═╡ 318a2256-f369-11ea-23a9-2f74c566549b
@@ -255,8 +306,10 @@ You should use this function whenever the problem set asks you to deal with _bri
 
 # ╔═╡ 6c7e4b54-f318-11ea-2055-d9f9c0199341
 begin
+	# Luminosity is something else but OK...
 	brightness(c::RGB) = mean((c.r, c.g, c.b))
 	brightness(c::RGBA) = mean((c.r, c.g, c.b))
+	
 end
 
 # ╔═╡ 74059d04-f319-11ea-29b4-85f5f8f5c610
@@ -331,7 +384,29 @@ random_seam(m, n, i) = reduce((a, b) -> [a..., clamp(last(a) + rand(-1:1), 1, n)
 # ╔═╡ abf20aa0-f31b-11ea-2548-9bea4fab4c37
 function greedy_seam(energies, starting_pixel::Int)
 	# you can delete the body of this function - it's just a placeholder.
-	random_seam(size(energies)..., starting_pixel)
+	#random_seam(size(energies)..., starting_pixel)
+	
+	rows,cols = size(energies)
+	
+	o = Vector{Int}(undef, rows)
+	
+	o[1] = starting_pixel
+	
+	for r in 2:rows
+		
+		
+		
+		span = max(1, o[r-1] - 1):min(cols, o[r-1]+1)
+		
+		o[r] = o[r-1] + argmax(energies[r, span]) - 2
+		
+		if o[r-1] == 1
+			o[r] += 1
+		end
+		
+	end
+	
+	return o
 end
 
 # ╔═╡ 5430d772-f397-11ea-2ed8-03ee06d02a22
@@ -401,16 +476,48 @@ which is one of $j-1$, $j$ or $j+1$, up to boundary conditions.
 Return these two values in a tuple.
 """
 
+# ╔═╡ edebd6ca-4be7-11eb-3ebc-036b6bd2e5ab
+md"""Can I return a vector of columns? Returning one column to jump to seems pretty short-sighted..."""
+
 # ╔═╡ 8ec27ef8-f320-11ea-2573-c97b7b908cb7
 ## returns lowest possible sum energy at pixel (i, j), and the column to jump to in row i+1.
-function least_energy(energies, i, j)
-	# base case
-	# if i == something
-	#    return energies[...] # no need for recursive computation in the base case!
-	# end
-	#
-	# induction
-	# combine results from recursive calls to `least_energy`.
+function least_energy(energies, r, c)
+	rows, cols = size(energies)
+	
+	@assert r in 1:rows
+	@assert c in 1:cols
+	
+	# base case: bottom row
+	if r == rows
+		return energies[r,c], NaN
+		# If something tries to index based upon this second output, I want it to fail
+		# You should not proceed to row r+1 from the last row
+	end
+	
+	t = typeof(energies[1])
+	next_row_energies = Vector{t}(undef, 3)
+	# Tricky trick: index by column
+	# Note: indices may be outside 1:cols. We will need to handle this.
+	next_row_energies = OffsetArray(next_row_energies, c-1:c+1)
+	
+	@threads for col in c-1:c+1  # multi-processing 🤯🔥
+	#for col in c-1:c+1  # single-processing 😦
+		# Checks should only run if col is in bounds
+		if col in 1:cols
+			e, _ = least_energy(energies, r+1, col)
+			next_row_energies[col] = e
+		else
+			# Rule out any out-of-bounds indices
+			next_row_energies[col] = typemax(t)
+		end
+	end
+	
+	next_col = argmin(next_row_energies)  # Get column of least energy by index
+	energy_min = next_row_energies[next_col]  # Next pixel with least energy
+	energy = energies[r,c] + energy_min
+	
+	return energy, next_col
+	
 end
 
 # ╔═╡ a7f3d9f8-f3bb-11ea-0c1a-55bbb8408f09
@@ -445,11 +552,28 @@ Now use the `least_energy` function you defined above to define the `recursive_s
 This will give you the method used in the lecture to perform [exhaustive search of all possible paths](https://youtu.be/rpB6zQNsbQU?t=839).
 """
 
+# ╔═╡ 3c2afc0e-4be7-11eb-0e42-c3a296f93802
+md"""
+I find these function descriptions confusing: 
+- The output description of `least_energy` doesn't seem relevant: it seems to ask for the single next pixel, even though _we know where we're going_ and can return the entire path. This adds another layer of callbacks on top of the already inefficient recursion: why not accumulate the entire path at a single time?? _We have already calculated it_. Perhaps it's because array initialization in Julia is a bit counterintuitive? ...We need to learn how to do it, so why not here?
+- `recursive_seam` takes `starting_pixel` as an input, but it's not made clear that the test function will try all starting pixels in order to find the lowest energy solution. We're solving a portion of the problem and the rest is hidden from view. It might make more sense to show comprehensible related functions right here instead of hiding them at the end.
+"""
+
 # ╔═╡ 85033040-f372-11ea-2c31-bb3147de3c0d
 function recursive_seam(energies, starting_pixel)
-	m, n = size(energies)
-	# Replace the following line with your code.
-	[rand(1:starting_pixel) for i=1:m]
+	rows, cols = size(energies)
+	
+	path = Vector{Int}(undef, rows)
+	
+	col = starting_pixel
+	
+	path[1] = col
+	for row = 1:rows-1
+		_, col = least_energy(energies, row, col)
+		path[row+1] = col
+	end
+	
+	return path
 end
 
 # ╔═╡ 1d55333c-f393-11ea-229a-5b1e9cabea6a
@@ -465,7 +589,11 @@ md"""
 
 # ╔═╡ 6d993a5c-f373-11ea-0dde-c94e3bbd1552
 exhaustive_observation = md"""
-<your answer here>
+**Ugh**... mostly because you've hidden the mechanics of iterating over all starting columns....
+
+For each starting pixel, the recursive search evaluates every possible "next step" pixel and, in turn, evaluates all "next step" pixels from there until it reaches the end. Once it reaches the end (the "base case") it returns the energy metric for ascending levels of complexity and screens out unnecessary (higher energy) paths.
+
+To put it another way: every pixel evaluates every possible path below it, and only returns the path that evaluates as the least energy.
 """
 
 # ╔═╡ ea417c2a-f373-11ea-3bb0-b1b5754f2fac
@@ -499,22 +627,90 @@ You are expected to read and understand the [documentation on dictionaries](http
 """
 
 # ╔═╡ b1d09bc8-f320-11ea-26bb-0101c9a204e2
-function memoized_least_energy(energies, i, j, memory)
-	m, n = size(energies)
+function memoized_least_energy(energies, r, c, memory::AbstractDict)
+	rows, cols = size(energies)
 	
-	# Replace the following line with your code.
-	[starting_pixel for i=1:m]
+	@assert r in 1:rows
+	@assert c in 1:cols
+	
+	# base cases: bottom row or already solved
+	
+	if r == rows
+		e = get!(memory, (r,c), energies[r,c])
+		return e, NaN
+		# Next index NaN: Don't go there!
+	end
+	
+	t = typeof(energies[1])
+	next_row_energies = Vector{t}(undef, 3)
+	# Tricky trick: index by column
+	# Note: indices may be outside 1:cols. We will need to handle this.
+	next_row_energies = OffsetArray(next_row_energies, c-1:c+1)
+	
+	#@threads for col in c-1:c+1  # multi-processing 🤯🔥
+	# Can't run parallel without locks: shared memory access
+	for col in c-1:c+1  # single-processing 😦
+		# Checks should only run if col is in bounds
+		if col in 1:cols
+			next_row_energies[col] = get!(memory, (r+1, col), 
+					memoized_least_energy(energies, r+1, col, memory)[1])
+		else
+			# Rule out any out-of-bounds indices
+			next_row_energies[col] = typemax(t)
+		end
+	end
+	
+	next_col = argmin(next_row_energies)  # Get column of least energy by index
+	energy_min = next_row_energies[next_col]  # Next pixel with least energy
+	energy = energies[r,c] + energy_min
+	
+	memory[r,c] = energy
+	
+	return energy, next_col
+end
+
+# ╔═╡ 047ffbf6-4c82-11eb-2d51-6dcb98e5a5c8
+size(img)
+
+# ╔═╡ 14b1dd5c-4ccb-11eb-2dc8-7dc5cc1ebdfd
+let
+	rows, cols = size(img)
+	e = energy(img)
+	
+	memory = Dict{Tuple{Int,Int}, Float64}()
+	
+	rows_to_consider = 15
+	row = rows - rows_to_consider
+	
+	memoized_least_energy(e, row, Int(round(cols/2)), memory)
 end
 
 # ╔═╡ 3e8b0868-f3bd-11ea-0c15-011bbd6ac051
 function recursive_memoized_seam(energies, starting_pixel)
 	memory = Dict{Tuple{Int,Int}, Float64}() # location => least energy.
 	                                         # pass this every time you call memoized_least_energy.
-	m, n = size(energies)
 	
-	# Replace the following line with your code.
-	[rand(1:starting_pixel) for i=1:m]
+	rows, cols = size(energies)
+	
+	path = Vector{Int}(undef, rows)
+	
+	col = starting_pixel
+	
+	path[1] = col
+	for row = 1:rows-1
+		_, col = memoized_least_energy(energies, row, col, memory)
+		path[row+1] = col
+	end
+	
+	return path
+	
 end
+
+# ╔═╡ 56843d76-4c7e-11eb-1d94-41a7be41788f
+
+
+# ╔═╡ 5e86ed5c-4c8d-11eb-1885-f1a363f84535
+md"""TOO SLOW! 🐢🐢🐢 I waited more than 10 minutes"""
 
 # ╔═╡ 4e3bcf88-f3c5-11ea-3ada-2ff9213647b7
 md"Compute shrunk image: $(@bind shrink_dict CheckBox())"
@@ -531,24 +727,92 @@ Write a variation of `matrix_memoized_least_energy` and `matrix_memoized_seam` w
 """
 
 # ╔═╡ c8724b5e-f3bd-11ea-0034-b92af21ca12d
-function matrix_memoized_least_energy(energies, i, j, memory)
-	m, n = size(energies)
+function matrix_memoized_least_energy(energies, r, c, memory=fill!(similar(energies), NaN))
+	rows, cols = size(energies)
 	
-	# Replace the following line with your code.
-	[starting_pixel for i=1:m]
+	@assert r in 1:rows
+	@assert c in 1:cols
+	
+	# base cases: bottom row or already solved
+	
+	if r == rows
+		if isnan(memory[r,c])
+			memory[r,c] = energies[r,c]
+		end
+		return energies[r,c], NaN
+		# Next index NaN: Don't go there!
+	end
+	
+	t = typeof(energies[1])
+	next_row_energies = Vector{t}(undef, 3)
+	# Tricky trick: index by column
+	# Note: indices may be outside 1:cols. We will need to handle this.
+	next_row_energies = OffsetArray(next_row_energies, c-1:c+1)
+	
+	#@threads for col in c-1:c+1  # multi-processing 🤯🔥
+	# Can't run parallel without locks: shared memory access
+	for col in c-1:c+1  # single-processing 😦
+		# Checks should only run if col is in bounds
+		if col in 1:cols
+			next_row_energies[col] = memory[r+1,col]
+			if isnan(next_row_energies[col])
+				next_row_energies[col] = matrix_memoized_least_energy(energies, r+1, col, memory)[1]
+			end
+		else
+			# Rule out any out-of-bounds indices
+			next_row_energies[col] = typemax(t)
+		end
+	end
+	
+	next_col = argmin(next_row_energies)  # Get column of least energy by index
+	energy_min = next_row_energies[next_col]  # Next pixel with least energy
+	energy = energies[r,c] + energy_min
+	
+	memory[r,c] = energy
+	
+	return energy, next_col
 end
 
 # ╔═╡ be7d40e2-f320-11ea-1b56-dff2a0a16e8d
-function matrix_memoized_seam(energies, starting_pixel)
-	memory = zeros(size(energies)) # use this as storage -- intially it's all zeros
-	m, n = size(energies)
+function matrix_memoized_seam(energies, starting_pixel, memory=fill!(Array{typeof(energies[1]), 2}(undef, rows, cols), NaN))
+	#memory = zeros(size(energies)) # use this as storage -- intially it's all zeros
+	# That won't do... how about something we can flag as erroneous?
+	rows, cols = size(energies)
+	t = typeof(energies[1])
 	
-	# Replace the following line with your code.
-	[starting_pixel for i=1:m]
+	path = Vector{Int}(undef, rows)
+	
+	col = starting_pixel
+	
+	path[1] = col
+	for row = 1:rows-1
+		_, col = matrix_memoized_least_energy(energies, row, col, memory)
+		path[row+1] = col
+	end
+	
+	return path
+end
+
+# ╔═╡ a0ab5eec-4ccf-11eb-3276-b3a650e9f122
+function matrix_memoized_seam(energies, memory=fill!(Array{typeof(energies[1]), 2}(undef, rows, cols), NaN))
+	
+	rows, cols = size(energies)
+	
+	for starting_pixel = 1:cols
+		matrix_memoized_seam(energies, starting_pixel, memory)
+	end
+	
+	starting_pixel = argmin(memory[1,:])
+	
+	return matrix_memoized_seam(energies, starting_pixel, memory)
+	
 end
 
 # ╔═╡ 507f3870-f3c5-11ea-11f6-ada3bb087634
 md"Compute shrunk image: $(@bind shrink_matrix CheckBox())"
+
+# ╔═╡ f38cc288-4c9b-11eb-1cee-3d397cf94106
+md"""950 seconds to first completion! 🕥⌛🦥 Fortunately each cut stays in memory..."""
 
 # ╔═╡ 24792456-f37b-11ea-07b2-4f4c8caea633
 md"""
@@ -562,9 +826,48 @@ Now it's easy to see that the above algorithm is equivalent to one that populate
 """
 
 # ╔═╡ ff055726-f320-11ea-32f6-2bf38d7dd310
-function least_energy_matrix(energies)
-	copy(energies)
+function least_energy_matrix(energies, m=fill!(similar(energies),NaN))
+	
+	rows, cols = size(energies)
+	t = typeof(energies[1])
+	
+	#m = similar(energies)
+	
+	if any(isnan.(m))
+
+		m[end,:] = energies[end,:]
+
+		@assert rows > 1
+		for r = rows-1:-1:1
+			least_energy = typemax(t)
+			@threads for c = 1:cols
+				yield()  # Safety feature: don't block main thread
+				if isnan(m[r,c])
+					for col in c-1:c+1
+						# Checks should only run if col is in bounds
+						if col in 1:cols
+							if m[r+1,col] < least_energy
+								least_energy = m[r+1,col]
+							end
+						end
+					end
+
+					m[r,c] = energies[r,c] + least_energy
+				end
+			end
+		end
+	end
+	return m
 end
+
+# ╔═╡ f05f63aa-4cc2-11eb-3d00-670f2bf66714
+m1 = least_energy_matrix(energy(img))
+
+# ╔═╡ 40b0e61c-4cc3-11eb-3aea-5dc4ed9b96e1
+argmin(m1[1,:])
+
+# ╔═╡ 8cb87b56-4cc3-11eb-338a-e577b0ae64f8
+
 
 # ╔═╡ 92e19f22-f37b-11ea-25f7-e321337e375e
 md"""
@@ -574,12 +877,77 @@ md"""
 """
 
 # ╔═╡ 795eb2c4-f37b-11ea-01e1-1dbac3c80c13
-function seam_from_precomputed_least_energy(energies, starting_pixel::Int)
-	least_energies = least_energy_matrix(energies)
-	m, n = size(least_energies)
+function seam_from_precomputed_least_energy(energies, starting_pixel::Int, memory=fill!(similar(energies),NaN))
 	
-	# Replace the following line with your code.
-	[starting_pixel for i=1:m]
+	least_energies = least_energy_matrix(energies, memory)
+	rows, cols = size(energies)
+	t = typeof(energies[1])
+	
+	c = starting_pixel
+	seam = Vector{Int}(undef, rows)
+	seam[1] = c
+	
+	for row = 1:rows-1
+		least_energy = typemax(t)
+		for col = c-1:c+1
+			if col in 1:cols
+				if least_energies[row+1,col] < least_energy
+					least_energy = least_energies[row+1,col]
+					seam[row+1] = col
+					c = col
+				end
+			end
+		end
+	end
+	
+	return seam
+end
+
+# ╔═╡ a856b1a6-4cc4-11eb-0d80-4f0106d80804
+# The test code stinks and takes forever, so we're just implementing a better solution here...
+function seam_from_precomputed_least_energy(energies)
+	
+	least_energies = least_energy_matrix(energies)
+	rows, cols = size(energies)
+	t = typeof(energies[1])
+	
+	c = argmin(least_energies[1,:])
+	seam = Vector{Int}(undef, rows)
+	seam[1] = c
+	
+	for row = 1:rows-1
+		least_energy = typemax(t)
+		for col = c-1:c+1
+			if col in 1:cols
+				if least_energies[row+1,col] < least_energy
+					least_energy = least_energies[row+1,col]
+					seam[row+1] = col
+					c = col
+				end
+			end
+		end
+	end
+	
+	return seam
+end
+
+# ╔═╡ 30d77710-4cc3-11eb-2284-4db117f18916
+s1 = seam_from_precomputed_least_energy(energy(img), 28)
+
+# ╔═╡ 63749c72-4d2a-11eb-3746-1df723cd4d79
+md"Test re-used memory: $(@bind reuse_mem CheckBox())"
+
+# ╔═╡ dead4766-4d27-11eb-1662-1d73bb67c117
+let
+	if reuse_mem
+		e = energy(img)
+		rows, cols = size(e)
+		memory = fill!(similar(e),NaN)
+
+		for c in 1:cols
+			seam_from_precomputed_least_energy(e, c, memory)
+		end
+	end
 end
 
 # ╔═╡ 51df0c98-f3c5-11ea-25b8-af41dc182bac
@@ -620,7 +988,7 @@ function shrink_n(img, n, min_seam, imgs=[]; show_lightning=true)
 	seam_energy(seam) = sum(e[i, seam[i]]  for i in 1:size(img, 1))
 	_, min_j = findmin(map(j->seam_energy(min_seam(e, j)), 1:size(e, 2)))
 	min_seam_vec = min_seam(e, min_j)
-	img′ = remove_in_each_row(img, min_seam_vec)
+	img′ = remove_in_each_row_views(img, min_seam_vec)
 	if show_lightning
 		push!(imgs, mark_path(img, min_seam_vec))
 	else
@@ -640,21 +1008,11 @@ if shrink_greedy
 	greedy_carved[greedy_n]
 end
 
-# ╔═╡ d88bc272-f392-11ea-0efd-15e0e2b2cd4e
-if shrink_recursive
-	recursive_carved = shrink_n(pika, 3, recursive_seam)
-	md"Shrink by: $(@bind recursive_n Slider(1:3, show_value=true))"
-end
-
-# ╔═╡ e66ef06a-f392-11ea-30ab-7160e7723a17
-if shrink_recursive
-	recursive_carved[recursive_n]
-end
-
 # ╔═╡ 4e3ef866-f3c5-11ea-3fb0-27d1ca9a9a3f
 if shrink_dict
-	dict_carved = shrink_n(img, 200, recursive_memoized_seam)
-	md"Shrink by: $(@bind dict_n Slider(1:200, show_value=true))"
+	iterations_dict = 1
+	dict_carved = shrink_n(img, iterations_dict, recursive_memoized_seam)
+	md"Shrink by: $(@bind dict_n Slider(1:iterations_dict, show_value=true))"
 end
 
 # ╔═╡ 6e73b1da-f3c5-11ea-145f-6383effe8a89
@@ -662,10 +1020,116 @@ if shrink_dict
 	dict_carved[dict_n]
 end
 
+# ╔═╡ 5cfa9588-4cc4-11eb-2cff-cde6443bfc1f
+function shrink_n_sane(img, n, min_seam, imgs=[]; show_lightning=true)
+	n<1 && return push!(imgs, img)
+
+	e = energy(img)
+	seam_energy(seam) = sum(e[i, seam[i]]  for i in 1:size(img, 1))
+	# STOP WASTING MY DANG TIME_, min_j = findmin(map(j->seam_energy(min_seam(e, j)), 1:size(e, 2)))	
+	min_seam_vec = min_seam(e)
+	img′ = remove_in_each_row_views(img, min_seam_vec)
+	if show_lightning
+		push!(imgs, mark_path(img, min_seam_vec))
+	else
+		push!(imgs, img′)
+	end
+	shrink_n_sane(img′, n-1, min_seam, imgs)
+end
+
+# ╔═╡ 20d77d86-4ccf-11eb-12d8-6947aae8c271
+function shrink_n_sane(img, n, min_seam, memory::Bool, imgs=[]; show_lightning=true)
+	n<1 && return push!(imgs, img)
+
+	e = energy(img)
+	seam_energy(seam) = sum(e[i, seam[i]]  for i in 1:size(img, 1))
+	# STOP WASTING MY DANG TIME_, min_j = findmin(map(j->seam_energy(min_seam(e, j)), 1:size(e, 2)))	
+	min_seam_vec = min_seam(e)
+	img′ = remove_in_each_row_views(img, min_seam_vec)
+	if show_lightning
+		push!(imgs, mark_path(img, min_seam_vec))
+	else
+		push!(imgs, img′)
+	end
+	shrink_n_sane(img′, n-1, min_seam, memory, imgs)
+end
+
+# ╔═╡ b8c7f008-4d24-11eb-0631-b59e620f3d11
+function shrink_n_sane(img, n, min_seam, memory, imgs=[]; show_lightning=true)
+	n<1 && return push!(imgs, img)
+
+	e = energy(img)
+	seam_energy(seam) = sum(e[i, seam[i]]  for i in 1:size(img, 1))
+	rows, cols = size(e)
+	c = 1
+	for c = 1:cols
+		min_seam(e, c, memory)
+		if !any(isnan.(memory[1,:]))
+			break
+		end
+	end
+	#_, min_j = findmin(map(j->seam_energy(min_seam(e, j, memory)), 1:size(e, 2)))	
+	min_j = argmin(memory[1,:])
+	min_seam_vec = min_seam(e, min_j, memory)
+	img′ = remove_in_each_row_views(img, min_seam_vec)
+	endpoint = min_seam_vec[end]
+	
+	# Clear memory that may have changed
+	for r = 1:size(e,1)
+		r_distance_from_end = rows - r
+		for c = 1:size(e,2)
+			c_distance_from_min = abs(min_j-c)
+			threshold = c_distance_from_min + r_distance_from_end
+			if threshold <= 0
+				memory[r,c] = NaN
+			end
+		end
+	end
+	memory = remove_in_each_row_views(memory, min_seam_vec)
+	if show_lightning
+		push!(imgs, mark_path(img, min_seam_vec))
+	else
+		push!(imgs, img′)
+	end
+	shrink_n_sane(img′, n-1, min_seam, memory, imgs)
+end
+
+# ╔═╡ bd8ac8cc-4d26-11eb-283f-7b65354dca44
+function shrink_n_sane(img, n, min_seam, memory::Dict, imgs=[]; show_lightning=true)
+	n<1 && return push!(imgs, img)
+
+	e = energy(img)
+	seam_energy(seam) = sum(e[i, seam[i]]  for i in 1:size(img, 1))
+	_, min_j = findmin(map(j->seam_energy(min_seam(e, j, memory)), 1:size(e, 2)))	
+	min_seam_vec = min_seam(e, min_j, memory)
+	img′ = remove_in_each_row_views(img, min_seam_vec)
+	endpoint = min_seam_vec[end]
+	
+	# Clear memory that may have changed
+	for r = 1:size(e,1)
+		r_distance_from_end = rows - r
+		for c = 1:size(e,2)
+			c_distance_from_min = abs(min_j-c)
+			threshold = c_distance_from_min + r_distance_from_end
+			if threshold <= 0
+				delete!(memory,(r,c))
+			end
+		end
+	end
+	if show_lightning
+		push!(imgs, mark_path(img, min_seam_vec))
+	else
+		push!(imgs, img′)
+	end
+	shrink_n_sane(img′, n-1, min_seam, memory, imgs)
+end
+
 # ╔═╡ 50829af6-f3c5-11ea-04a8-0535edd3b0aa
 if shrink_matrix
-	matrix_carved = shrink_n(img, 200, matrix_memoized_seam)
-	md"Shrink by: $(@bind matrix_n Slider(1:200, show_value=true))"
+	iterations_matrix = 200
+	memory = fill!(Array{typeof(energy(img)[1]), 2}(undef, rows, cols), NaN)
+	matrix_carved = shrink_n_sane(img, iterations_matrix, matrix_memoized_seam, memory)
+	md"Shrink by: $(@bind matrix_n Slider(1:iterations_matrix, show_value=true))"
 end
 
 # ╔═╡ 9e56ecfa-f3c5-11ea-2e90-3b1839d12038
@@ -675,8 +1139,10 @@ end
 
 # ╔═╡ 51e28596-f3c5-11ea-2237-2b72bbfaa001
 if shrink_bottomup
-	bottomup_carved = shrink_n(img, 200, seam_from_precomputed_least_energy)
-	md"Shrink by: $(@bind bottomup_n Slider(1:200, show_value=true))"
+	iterations_bottomup = 200
+	memory_bottomup=fill!(similar(energy(img)),NaN)
+	bottomup_carved = shrink_n_sane(img, iterations_bottomup, seam_from_precomputed_least_energy, memory_bottomup)
+	md"Shrink by: $(@bind bottomup_n Slider(1:iterations_bottomup, show_value=true))"
 end
 
 # ╔═╡ 0a10acd8-f3c6-11ea-3e2f-7530a0af8c7f
@@ -702,12 +1168,40 @@ pika = decimate(load(download("https://art.pixilart.com/901d53bcda6b27b.png")),1
 # ╔═╡ 73b52fd6-f3b9-11ea-14ed-ebfcab1ce6aa
 size(pika)
 
+# ╔═╡ 68f4c9ca-4c84-11eb-105f-f9289c19722c
+Gray.(energy(pika))
+
 # ╔═╡ fa8e2772-f3b6-11ea-30f7-699717693164
 if compute_access
 	tracked = track_access(energy(pika))
 	least_energy(tracked, 1,7)
 	tracked.accesses[]
 end
+
+# ╔═╡ d88bc272-f392-11ea-0efd-15e0e2b2cd4e
+if shrink_recursive
+	recursive_carved = shrink_n(pika, 3, recursive_seam)
+	md"Shrink by: $(@bind recursive_n Slider(1:3, show_value=true))"
+end
+
+# ╔═╡ e66ef06a-f392-11ea-30ab-7160e7723a17
+if shrink_recursive
+	recursive_carved[recursive_n]
+end
+
+# ╔═╡ 67c95e22-4c7e-11eb-2fa4-bf83c76e659c
+let
+	memory = Dict{Tuple{Int,Int}, Float64}()
+	
+	e = energy(pika)
+	
+	shrink_n(pika, 3, recursive_memoized_seam)
+	
+end
+	
+
+# ╔═╡ b8921058-4c90-11eb-075d-41eb9220646a
+a = Array{typeof(energy(pika)[1]), 2}(undef, 8, 8)
 
 # ╔═╡ ffc17f40-f380-11ea-30ee-0fe8563c0eb1
 hint(text) = Markdown.MD(Markdown.Admonition("hint", "Hint", [text]))
@@ -835,11 +1329,12 @@ bigbreak
 # ╟─e6b6760a-f37f-11ea-3ae1-65443ef5a81a
 # ╟─ec66314e-f37f-11ea-0af4-31da0584e881
 # ╟─85cfbd10-f384-11ea-31dc-b5693630a4c5
-# ╠═33e43c7c-f381-11ea-3abc-c942327456b1
+# ╟─33e43c7c-f381-11ea-3abc-c942327456b1
 # ╟─938185ec-f384-11ea-21dc-b56b7469f798
 # ╠═86e1ee96-f314-11ea-03f6-0f549b79e7c9
 # ╠═a4937996-f314-11ea-2ff9-615c888afaa8
 # ╠═0d144802-f319-11ea-0028-cd97a776a3d0
+# ╠═608876a8-4cc8-11eb-31e6-77230a7fcd69
 # ╟─cc9fcdae-f314-11ea-1b9a-1f68b792f005
 # ╟─b49a21a6-f381-11ea-1a98-7f144c55c9b7
 # ╟─b49e8cc8-f381-11ea-1056-91668ac6ae4e
@@ -849,6 +1344,7 @@ bigbreak
 # ╟─c086bd1e-f384-11ea-3b26-2da9e24360ca
 # ╟─1d893998-f366-11ea-0828-512de0c44915
 # ╟─59991872-f366-11ea-1036-afe313fb4ec1
+# ╠═41faeb8a-4d29-11eb-0e70-352730045cfc
 # ╠═e501ea28-f326-11ea-252a-53949fd9ef57
 # ╟─f7915918-f366-11ea-2c46-2f4671ae8a22
 # ╠═37d4ea5c-f327-11ea-2cc5-e3774c232c2b
@@ -856,7 +1352,9 @@ bigbreak
 # ╟─9e149cd2-f367-11ea-28ef-b9533e8a77bb
 # ╟─e3519118-f387-11ea-0c61-e1c2de1c24c1
 # ╟─ba1619d4-f389-11ea-2b3f-fd9ba71cf7e3
-# ╠═e49235a4-f367-11ea-3913-f54a4a6b2d6b
+# ╠═f5f74b46-4bca-11eb-0b9d-1359cecd952b
+# ╠═108eea16-4bcb-11eb-108d-1b9cb99d3e5c
+# ╟─e49235a4-f367-11ea-3913-f54a4a6b2d6b
 # ╟─145c0f58-f384-11ea-2b71-09ae83f66da2
 # ╟─837c43a4-f368-11ea-00a3-990a45cb0cbd
 # ╠═90a22cc6-f327-11ea-1484-7fda90283797
@@ -866,7 +1364,9 @@ bigbreak
 # ╟─4f0975d8-f329-11ea-3d10-59a503f8d6b2
 # ╟─dc63d32a-f387-11ea-37e2-6f3666a72e03
 # ╟─7eaa57d2-f368-11ea-1a70-c7c7e54bd0b1
-# ╠═fd819dac-f368-11ea-33bb-17148387546a
+# ╠═e3187452-4bcd-11eb-1912-132d8ca4c299
+# ╠═055a0684-4bce-11eb-3faa-d1488817444a
+# ╟─fd819dac-f368-11ea-33bb-17148387546a
 # ╟─d7a9c000-f383-11ea-1516-cf71102d8e94
 # ╟─8d558c4c-f328-11ea-0055-730ead5d5c34
 # ╟─318a2256-f369-11ea-23a9-2f74c566549b
@@ -885,7 +1385,7 @@ bigbreak
 # ╟─8ba9f5fc-f31b-11ea-00fe-79ecece09c25
 # ╟─f5a74dfc-f388-11ea-2577-b543d31576c6
 # ╟─c3543ea4-f393-11ea-39c8-37747f113b96
-# ╟─2f9cbea8-f3a1-11ea-20c6-01fd1464a592
+# ╠═2f9cbea8-f3a1-11ea-20c6-01fd1464a592
 # ╠═abf20aa0-f31b-11ea-2548-9bea4fab4c37
 # ╟─5430d772-f397-11ea-2ed8-03ee06d02a22
 # ╟─f580527e-f397-11ea-055f-bb9ea8f12015
@@ -901,40 +1401,61 @@ bigbreak
 # ╠═2a98f268-f3b6-11ea-1eea-81c28256a19e
 # ╟─32e9a944-f3b6-11ea-0e82-1dff6c2eef8d
 # ╟─9101d5a0-f371-11ea-1c04-f3f43b96ca4a
+# ╠═edebd6ca-4be7-11eb-3ebc-036b6bd2e5ab
 # ╠═ddba07dc-f3b7-11ea-353e-0f67713727fc
 # ╠═73b52fd6-f3b9-11ea-14ed-ebfcab1ce6aa
+# ╠═68f4c9ca-4c84-11eb-105f-f9289c19722c
+# ╠═a7e242fa-4c68-11eb-2620-214532ccfcd1
+# ╠═561d1258-4c6b-11eb-148a-03b33a210658
 # ╠═8ec27ef8-f320-11ea-2573-c97b7b908cb7
 # ╟─9f18efe2-f38e-11ea-0871-6d7760d0b2f6
 # ╟─a7f3d9f8-f3bb-11ea-0c1a-55bbb8408f09
-# ╟─fa8e2772-f3b6-11ea-30f7-699717693164
+# ╠═fa8e2772-f3b6-11ea-30f7-699717693164
 # ╟─18e0fd8a-f3bc-11ea-0713-fbf74d5fa41a
 # ╟─cbf29020-f3ba-11ea-2cb0-b92836f3d04b
 # ╟─8bc930f0-f372-11ea-06cb-79ced2834720
+# ╠═3c2afc0e-4be7-11eb-0e42-c3a296f93802
 # ╠═85033040-f372-11ea-2c31-bb3147de3c0d
-# ╠═1d55333c-f393-11ea-229a-5b1e9cabea6a
+# ╟─1d55333c-f393-11ea-229a-5b1e9cabea6a
 # ╠═d88bc272-f392-11ea-0efd-15e0e2b2cd4e
 # ╠═e66ef06a-f392-11ea-30ab-7160e7723a17
 # ╟─c572f6ce-f372-11ea-3c9a-e3a21384edca
 # ╠═6d993a5c-f373-11ea-0dde-c94e3bbd1552
-# ╠═ea417c2a-f373-11ea-3bb0-b1b5754f2fac
+# ╟─ea417c2a-f373-11ea-3bb0-b1b5754f2fac
 # ╟─56a7f954-f374-11ea-0391-f79b75195f4d
 # ╠═b1d09bc8-f320-11ea-26bb-0101c9a204e2
+# ╠═67c95e22-4c7e-11eb-2fa4-bf83c76e659c
+# ╠═047ffbf6-4c82-11eb-2d51-6dcb98e5a5c8
+# ╠═14b1dd5c-4ccb-11eb-2dc8-7dc5cc1ebdfd
 # ╠═3e8b0868-f3bd-11ea-0c15-011bbd6ac051
+# ╠═56843d76-4c7e-11eb-1d94-41a7be41788f
+# ╠═5e86ed5c-4c8d-11eb-1885-f1a363f84535
 # ╠═4e3bcf88-f3c5-11ea-3ada-2ff9213647b7
 # ╠═4e3ef866-f3c5-11ea-3fb0-27d1ca9a9a3f
 # ╠═6e73b1da-f3c5-11ea-145f-6383effe8a89
 # ╟─cf39fa2a-f374-11ea-0680-55817de1b837
 # ╠═c8724b5e-f3bd-11ea-0034-b92af21ca12d
 # ╠═be7d40e2-f320-11ea-1b56-dff2a0a16e8d
-# ╟─507f3870-f3c5-11ea-11f6-ada3bb087634
+# ╠═a0ab5eec-4ccf-11eb-3276-b3a650e9f122
+# ╠═b8921058-4c90-11eb-075d-41eb9220646a
+# ╠═507f3870-f3c5-11ea-11f6-ada3bb087634
+# ╠═f38cc288-4c9b-11eb-1cee-3d397cf94106
 # ╠═50829af6-f3c5-11ea-04a8-0535edd3b0aa
 # ╠═9e56ecfa-f3c5-11ea-2e90-3b1839d12038
 # ╟─4f48c8b8-f39d-11ea-25d2-1fab031a514f
 # ╟─24792456-f37b-11ea-07b2-4f4c8caea633
+# ╠═776e8888-4ca2-11eb-0bd1-5bdd481f5e32
 # ╠═ff055726-f320-11ea-32f6-2bf38d7dd310
+# ╠═f05f63aa-4cc2-11eb-3d00-670f2bf66714
+# ╠═40b0e61c-4cc3-11eb-3aea-5dc4ed9b96e1
+# ╠═30d77710-4cc3-11eb-2284-4db117f18916
+# ╠═8cb87b56-4cc3-11eb-338a-e577b0ae64f8
 # ╟─e0622780-f3b4-11ea-1f44-59fb9c5d2ebd
 # ╟─92e19f22-f37b-11ea-25f7-e321337e375e
 # ╠═795eb2c4-f37b-11ea-01e1-1dbac3c80c13
+# ╠═a856b1a6-4cc4-11eb-0d80-4f0106d80804
+# ╠═63749c72-4d2a-11eb-3746-1df723cd4d79
+# ╠═dead4766-4d27-11eb-1662-1d73bb67c117
 # ╠═51df0c98-f3c5-11ea-25b8-af41dc182bac
 # ╠═51e28596-f3c5-11ea-2237-2b72bbfaa001
 # ╠═0a10acd8-f3c6-11ea-3e2f-7530a0af8c7f
@@ -942,7 +1463,11 @@ bigbreak
 # ╟─0fbe2af6-f381-11ea-2f41-23cd1cf930d9
 # ╟─48089a00-f321-11ea-1479-e74ba71df067
 # ╟─6b4d6584-f3be-11ea-131d-e5bdefcc791b
-# ╟─437ba6ce-f37d-11ea-1010-5f6a6e282f9b
+# ╠═437ba6ce-f37d-11ea-1010-5f6a6e282f9b
+# ╠═5cfa9588-4cc4-11eb-2cff-cde6443bfc1f
+# ╠═20d77d86-4ccf-11eb-12d8-6947aae8c271
+# ╠═b8c7f008-4d24-11eb-0631-b59e620f3d11
+# ╠═bd8ac8cc-4d26-11eb-283f-7b65354dca44
 # ╟─ef88c388-f388-11ea-3828-ff4db4d1874e
 # ╟─ef26374a-f388-11ea-0b4e-67314a9a9094
 # ╟─6bdbcf4c-f321-11ea-0288-fb16ff1ec526
